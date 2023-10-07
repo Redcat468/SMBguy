@@ -8,6 +8,7 @@ This program provides a graphical user interface (GUI) to facilitate the mountin
 - Manage switching between different servers, and users.
 - Pre-configured server list for quick access.
 - Intuitive user interface based on PyQt5.
+- Powerfull OS integration via Windows APIs through [pywin32](https://pypi.org/project/pywin32/)
 
         
 ## Installation
