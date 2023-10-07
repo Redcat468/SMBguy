@@ -9,10 +9,6 @@ This program provides a graphical user interface (GUI) to facilitate the mountin
 - Pre-configured server list for quick access.
 - Intuitive user interface based on PyQt5.
 
-
-![Image](https://i.imgur.com/v7IWFqp.png)
-        
-
         
 ## Installation
 
@@ -29,8 +25,19 @@ pip install PyQt5 pywin32
 Run main.py to start the application.
 Follow the on-screen instructions to mount or unmount SMB shares.
 
-## Demo
-![Image](https://s6.gifyu.com/images/S6Ecb.gif)
+## Screenshots
+
+### login window 
+
+![Image](https://i.imgur.com/ZDZq8ap.png)
+
+### Shares window 
+
+![Image](https://imgur.com/WJE5gFu.png)
+
+### Server list editor
+
+![Image](https://imgur.com/pxqPoII.png)
 
 
 ## Contributing
