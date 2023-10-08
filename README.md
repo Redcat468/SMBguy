@@ -34,7 +34,7 @@ Follow the on-screen instructions to mount or unmount SMB shares.
 
 ### Shares window 
 
-![Image](https://imgur.com/WJE5gFu.png)
+![Image](https://imgur.com/p7j5JSA.png)
 
 ### Server list editor
 
