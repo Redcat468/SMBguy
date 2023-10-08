@@ -11,29 +11,43 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from PyQt5.QtWidgets import QApplication, QApplication, QMainWindow, QSystemTrayIcon, QMenu, QAction, QLabel,QLayout, QWidget, QTextEdit, QMessageBox, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QComboBox
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtWidgets import QApplication, QApplication, QSystemTrayIcon, QMenu, QAction, QLabel,QLayout, QWidget, QTextEdit, QMessageBox, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QComboBox
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QSharedMemory
 from PyQt5.QtGui import QIcon, QFont, QPixmap
 import sys
 import win32wnet
 import win32net
 import win32netcon
-import win32file
 import win32api
 import string
 import os
 
+# Check if the file server.ini exists, if not, create it
+def check_and_create_serverini():
+    if os.path.exists('C:\ProgramData\SMBguy\servers.ini'):
+        pass
+    else:        
+        # Check if the directory exists, if not create it
+        directory = os.path.dirname('C:\ProgramData\SMBguy\servers.ini')
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        
+        # Create the servers.ini file
+        with open('C:\ProgramData\SMBguy\servers.ini', 'w') as f:
+            f.write("192.168.1.2,EXAMPLE-SERVER")        
+            
+# This function connects to a server using the provided credentials and retrieves the list of shares on the server.
 def get_shares(server, username, password):
     global share_info
     share_info = {}
-    
+    # Connect to the server using the provided credentials
     try:
         net_resource = win32wnet.NETRESOURCE()
         net_resource.lpRemoteName = f"\\\\{server}"
         net_resource.lpProvider = None
         net_resource.dwType = win32netcon.RESOURCETYPE_DISK
         win32wnet.WNetAddConnection2(net_resource, password, username)
-
+        # Get the list of shares on the server
         shares, _, _ = win32net.NetShareEnum(server, 0)
         # Remove IPC$ share if it exists
         shares = [share for share in shares if share['netname'] != 'IPC$']
@@ -41,16 +55,10 @@ def get_shares(server, username, password):
         # Initialize share_info with all shares set to 'Not Mounted'
         for share in shares:
             share_info[share['netname']] = {'is_mounted': False, 'mount_letter': None}
-
         drives = win32api.GetLogicalDriveStrings().split('\x00')[:-1]
-
-
         for drive in drives:
             try:
-                # This will give the UNC path of the share
                 remote_name = win32wnet.WNetGetConnection(drive[:-1])
-                
-                # Remove leading '\\' from the UNC path and split
                 remote_server, remote_share = remote_name[2:].split('\\', 1)
                 
                 if remote_server.lower() == server.lower():
@@ -58,17 +66,19 @@ def get_shares(server, username, password):
                         share_info[remote_share] = {'is_mounted': True, 'mount_letter': drive[:-1]}
 
             except Exception as e:
-                # Likely an error due to the drive not being a network share
                 pass
         
-        
+    # This code block handles the exception when connecting to a server with different credentials.
+    # It displays a warning message box asking the user if they want to disconnect and change the login.
     except Exception as e:
         if e.winerror == 1219:
+            # Create a QMessageBox to display the warning message
             msg_box = QMessageBox()
             msg_box.setIcon(QMessageBox.Warning)
             msg_box.setText("You are already connected to this server with different credentials. Do you want to disconnect and change the login?")
-            msg_box.setWindowTitle("Connection Error")
+            msg_box.setWindowTitle("Connection switching")
             msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+
             
             return_value = msg_box.exec()
             if return_value == QMessageBox.Yes:
@@ -76,16 +86,14 @@ def get_shares(server, username, password):
                 subprocess.run(["net", "use", "*", "/delete", "/y"])
                 get_shares(server, username, password)
             else:
-                os.execv(sys.executable, ['python'] + sys.argv)
-
+                self.show()
+                pass
         else:
             print(f"Failed to get shares: {e}")
             QMessageBox.warning(None, 'Failed to get shares', f"Failed to get shares: {e}")
-            print("Relaunching the program...")
-            os.execv(sys.executable, ['python'] + sys.argv)
+            self.show()
 
-    return share_info
-
+# This funcion gets a list of the available drive letters
 def get_available_drive_letters():
     global all_drive_letters
     all_drive_letters = {}
@@ -102,6 +110,7 @@ def get_available_drive_letters():
 
     return available_drive_letters
 
+# Main class, with the server choosing/login window
 class SMBClient(QWidget):
     def __init__(self):
         super().__init__()
@@ -109,36 +118,29 @@ class SMBClient(QWidget):
         self.initUI()
         self.setWindowTitle('SMBGuy')
         self.setWindowIcon(QIcon('logo.ico'))
-        self.click_count = 0
-        self.text_editor = None
-        
-    def settings_clicked(self, event):
-            self.text_editor = TextEditor()
-            self.text_editor.show()
-            self.hide()
-
+                        
+    # main window interface 
     def initUI(self):
         
-        # Initialisation du QSystemTrayIcon
+        # Initialize the QSystemTrayIcon
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon('path_to_your_icon.png'))
+        self.tray_icon.setIcon(QIcon('logo.ico'))
 
-        # Création du menu pour le QSystemTrayIcon
+        # Create the menu for the QSystemTrayIcon
         tray_menu = QMenu()
-
         restore_action = QAction("Restore", self)
         quit_action = QAction("Exit", self)
 
+        # Connect the actions to the methods of the main window
         restore_action.triggered.connect(self.show)
         quit_action.triggered.connect(self.quit_application)
-
-        tray_menu.addAction(restore_action)
-        tray_menu.addAction(quit_action)
-
+        tray_menu.addAction(restore_action)  # Add the "Restore" action to the tray menu
+        tray_menu.addAction(quit_action)  # Add the "Exit" action to the tray menu
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         
         
+        # Create a QHBoxLayout to arrange the logo and configure servers button horizontally
         self.layout = QHBoxLayout()
         self.layout.setSpacing(10)
 
@@ -164,15 +166,18 @@ class SMBClient(QWidget):
         # Add the QVBoxLayout to the QHBoxLayout
         self.layout.addLayout(self.vertical_layout)
         
+        # Create a QVBoxLayout to stack the logo and configure servers button
+        # This layout will hold the logo button and the configure servers button vertically
         column_layout = QVBoxLayout()
-
         label = QLabel('Select a server :  ', self)
         label.setFont(QFont('Arial', 10, QFont.Bold))
         self.server_input = QComboBox(self)
         self.server_input.setFixedSize(300, 30)
         self.server_input.setFont(QFont('Arial', 10, QFont.Bold))
+        
         # Add server list from servers.ini to the ComboBox
-        with open('servers.ini', 'r') as file:
+        check_and_create_serverini()
+        with open('C:\ProgramData\SMBguy\servers.ini', 'r') as file:
             servers = [line.split(',')[1].strip() for line in file.readlines()]
             self.server_input.addItems(servers)
 
@@ -219,78 +224,116 @@ class SMBClient(QWidget):
         # Fix the main window size based on its content
         self.setFixedSize(600, 250)
         self.setLayout(self.layout)
-              
+
+    # Open the text editor window
+    def settings_clicked(self, event):
+        self.text_editor = TextEditor()
+        self.text_editor.show()
+        # Connect the closed signal of the text editor to the show method of the main window
+        self.text_editor.closed.connect(self.show)
+        # Connect the closed signal of the text editor to the update_server_list method of the main window
+        self.text_editor.closed.connect(self.update_server_list)
+        self.hide()
+
+    # Update the server list based on the servers.ini file
+    def update_server_list(self):
+        # Check if the servers.ini file exists, if not, create it
+        check_and_create_serverini()
+        # Open the servers.ini file in read mode
+        with open('C:\ProgramData\SMBguy\servers.ini', 'r') as file:
+            servers = [line.split(',')[1].strip() for line in file.readlines()]
+            # Clear the server input dropdown
+            self.server_input.clear()
+            # Add the server names to the server input dropdown
+            self.server_input.addItems(servers)
+
+    # Check if the Enter or Return key is pressed, and if so, send the connect function
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             self.connect()
             
-    def connect(self): 
+    # Function to handle the connect button click event, launches the Sharetable class and window
+    def connect(self):
         global server
         global username
         global password
-        
-        with open('servers.ini', 'r') as file:
-            for line in file:
-                if self.server_input.currentText() in line:
-                    server = line.split(',')[0].strip()
-                    break
-        username = self.username_input.text()
-        password = self.password_input.text()
-    
-        get_shares(server,username,password)
-        get_available_drive_letters()
-        share_table = ShareTable(share_info, available_drive_letters)
-        share_table.show()
-        self.hide()
-        self.tray_icon.hide()
-
-    def disconnect(self):     
         try:
+            # Check if the servers.ini file exists, if not, create it
+            check_and_create_serverini()        
+            # Open the servers.ini file in read mode
+            with open('C:\ProgramData\SMBguy\servers.ini', 'r') as file:
+                # Iterate through each line in the file
+                for line in file:
+                    # Check if the selected server is in the line
+                    if self.server_input.currentText() in line:
+                        # Extract the server IP address from the line
+                        server = line.split(',')[0].strip()
+                        break
+            # Get the username and password from the input fields
+            username = self.username_input.text()
+            password = self.password_input.text()
+            # Get the list of shares for the selected server using the provided credentials
+            shares = get_shares(server, username, password)
+            # Get the available drive letters
+            get_available_drive_letters()
+            # Create and show the share table window
+            share_table = ShareTable(share_info, available_drive_letters)
+            share_table.show()
+            # Connect the closed signal of the share table window to the show method of the main window
+            share_table.closed.connect(self.show)
+            # Clear the username and password input fields for security
+            self.username_input.clear()
+            self.password_input.clear() 
+            self.hide()
+        except :
+            pass
+    
+    # Function to disconnect from the server and clear input fields
+    def disconnect(self):
+        # Clear the inputs
+        self.server_input.clear()
+        self.username_input.clear()
+        self.password_input.clear()
+        # Update the server list based on the servers.ini file
+        self.update_server_list()
+        try:
+            # Disconnect all network connections
             import subprocess
             subprocess.run(["net", "use", "*", "/delete", "/y"])
+            # Show success message
             QMessageBox.information(self, 'Success', 'All network connections have been disconnected.')
         except Exception as e:
             QMessageBox.warning(self, 'Error', f'Failed to disconnect network connections: {str(e)}')
     
+    # This function is called when the window is closed
     def closeEvent(self, event):
         event.ignore()
         self.hide()
-        self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon('logo_tray.ico'))
-        self.tray_icon.show()
-        self.tray_icon.showMessage(
-            "SMBguy",
-            "Application was minimized to Tray",
-            QIcon('logo_tray.ico'),
-            2000
-        )
-        self.tray_icon.activated.connect(self.tray_icon_clicked)
-            # Création du menu pour le QSystemTrayIcon
-        tray_menu = QMenu()
-
-        quit_action = QAction("Exit", self)
-        quit_action.triggered.connect(self.quit_application)
-        tray_menu.addAction(quit_action)
-
-        self.tray_icon.setContextMenu(tray_menu)
-
+        
+    # Function to handle the tray icon click event
     def tray_icon_clicked(self, reason):
         if reason == QSystemTrayIcon.Trigger:
             self.show()
             self.tray_icon.hide()
 
+    # Function to quit the application
     def quit_application(self):
         self.tray_icon.hide()
         QApplication.quit()
-        
+   
+# Class used to modify servers.ini     
 class TextEditor(QWidget):
+    # Signal emitted when the window is closed
+    closed = pyqtSignal()
     def __init__(self):
         super().__init__()
         self.setWindowTitle('SMBGuy Server list Editor')
         self.setWindowIcon(QIcon('logo.ico'))
         self.initUI()
-
+    
+    # main window interface 
     def initUI(self):
+        # Create a layout for the main window
         layout = QVBoxLayout()
         banner_image = QLabel(self)
         pixmap = QPixmap('bandeau.png')
@@ -309,12 +352,13 @@ class TextEditor(QWidget):
         instruction_label3.setAlignment(Qt.AlignCenter)
         layout.addWidget(instruction_label3)
 
-        # Créer le widget QTextEdit pour l'édition du fichier
+        # Create the QTextEdit widget for file editing
         self.text_edit = QTextEdit(self)
         layout.addWidget(self.text_edit)
 
         # Charger le contenu du fichier servers.ini dans le QTextEdit
-        with open('servers.ini', 'r') as file:
+        check_and_create_serverini()
+        with open('C:\ProgramData\SMBguy\servers.ini', 'r') as file:
             content = file.read()
             self.text_edit.setText(content)
 
@@ -333,19 +377,40 @@ class TextEditor(QWidget):
         self.show()
 
     def saveToFile(self):
-        with open('servers.ini', 'w') as file:
-            content = self.text_edit.toPlainText()
+        # Get the content of the text edit widget
+        content = self.text_edit.toPlainText()
+        # Split the content into lines
+        lines = content.split('\n')
+
+        # Check the format of each line before proceeding
+        for line in lines:
+            # If a line does not contain a comma, display a warning message and return
+            if ',' not in line:
+                msg_box = QMessageBox()
+                msg_box.setIcon(QMessageBox.Warning)
+                msg_box.setText(f"Invalid server {line}. Please format as IPADRESS,SERVERNAME")
+                msg_box.setWindowTitle("Warning")
+                msg_box.setStandardButtons(QMessageBox.Ok)
+                msg_box.exec_()
+                return  # Stop the function here if an invalid line is found
+
+        # If all lines are valid, save the file and close the window
+        with open('C:\\ProgramData\\SMBguy\\servers.ini', 'w') as file:
             file.write(content)
-        self.close()
+
+        self.closed.emit()
+        self.close()  # Close the window
         
     def cancel_edition(self):
+        self.closed.emit()
         self.close()
 
     def closeEvent(self, event):
-        # Lorsque la fenêtre est fermée, relancez l'application
-        os.execv(sys.executable, ['python'] + sys.argv)
+        self.closed.emit()
+        super().closeEvent(event)       
                                
 class ShareTable(QWidget):
+    closed = pyqtSignal()
     def __init__(self, share_info, available_drive_letters):
         super().__init__()
         self.share_info = share_info
@@ -375,7 +440,6 @@ class ShareTable(QWidget):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         
-    
         self.layout = QVBoxLayout()
         banner_image = QLabel(self)
         pixmap = QPixmap('bandeau.png')
@@ -389,6 +453,7 @@ class ShareTable(QWidget):
         self.table = QTableWidget()
         self.table.setShowGrid(False)        
         self.table.verticalHeader().setVisible(False)
+        # Set the stylesheet for the table
         self.table.setStyleSheet("""
             QTableWidget {
                 background-color: transparent; 
@@ -456,13 +521,61 @@ class ShareTable(QWidget):
             self.table.setCellWidget(row, 4, unmount_button)
         
         self.layout.addWidget(self.table)
+
+        # Create a horizontal layout for the buttons
+        button_layout = QHBoxLayout()
+
         # Button: Log out or switch server
-        self.unmount_all_button = QPushButton('Log out or switch server', self)
-        self.unmount_all_button.clicked.connect(self.switch_server)
-        self.layout.addWidget(self.unmount_all_button)
-        
+        self.switch_server_button = QPushButton('Connect to another server', self)
+        self.switch_server_button.setIcon(QIcon('login.png'))
+        self.switch_server_button.clicked.connect(self.switch_server)
+        button_layout.addWidget(self.switch_server_button)
+
+        # Button: Unmount All
+        self.unmount_all_button = QPushButton('Log out from this server', self)
+        self.unmount_all_button.setIcon(QIcon('logout.png'))
+        self.unmount_all_button.clicked.connect(self.disconnect)
+        button_layout.addWidget(self.unmount_all_button)
+
+        # Add the horizontal layout to the main vertical layout
+        self.layout.addLayout(button_layout)
+
         self.setLayout(self.layout)
         self.setMinimumSize(540, 500)
+    
+    def disconnect(self):
+        import subprocess
+        try:
+            # Get the list of mounted drives
+            drives = win32api.GetLogicalDriveStrings().split('\x00')[:-1]
+
+            for drive in drives:
+                try:
+                    # Get the UNC path of the share
+                    remote_name = win32wnet.WNetGetConnection(drive[:-1])
+
+                    # Check if this drive is connected to the specified server
+                    remote_server, _ = remote_name[2:].split('\\', 1)
+                    if remote_server.lower() == server.lower():
+                        # Disconnect this drive
+                        completed_process = subprocess.run(["net", "use", drive[:-1], "/delete", "/y"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        output = completed_process.stdout
+                        error_output = completed_process.stderr
+
+                except Exception as e:
+                    # If we cannot get the UNC path, move to the next iteration
+                    continue
+
+            if output:
+                QMessageBox.information(self, 'Success', f'Disconnected from the server')
+            elif error_output:
+                QMessageBox.warning(self, 'Error', f'Failed to disconnect network connections. Error:\n{error_output}')
+
+        except Exception as e:
+            QMessageBox.warning(self, 'Error', f'Failed to disconnect network connections: {str(e)}')
+
+        self.closed.emit()
+        self.hide()
 
     def refresh_table(self):
         get_shares(server, username, password)
@@ -529,7 +642,7 @@ class ShareTable(QWidget):
         self.refresh_table()
 
     def unmount_share(self, row):
-        drive_letter = self.table.item(row, 1).text()# Utilisez la lettre de la colonne 'Mount Status'
+        drive_letter = self.table.item(row, 1).text()  # Use the letter from the 'Mount Status' column
         try:
             win32wnet.WNetCancelConnection2(f"{drive_letter}", 0, 0)
 
@@ -541,32 +654,12 @@ class ShareTable(QWidget):
         self.refresh_table()
 
     def switch_server(self):
-        self.smb_client = SMBClient()
-        self.smb_client.show()
+        self.closed.emit()
         self.hide()
-        self.tray_icon.hide()
 
     def closeEvent(self, event):
         event.ignore()
         self.hide()
-        self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon('logo_tray.ico'))
-        self.tray_icon.show()
-        self.tray_icon.showMessage(
-            "SMBguy",
-            "Application was minimized to Tray",
-            QIcon('logo_tray.ico'),
-            2000
-        )
-        self.tray_icon.activated.connect(self.tray_icon_clicked)
-            # Création du menu pour le QSystemTrayIcon
-        tray_menu = QMenu()
-
-        quit_action = QAction("Exit", self)
-        quit_action.triggered.connect(self.quit_application)
-        tray_menu.addAction(quit_action)
-
-        self.tray_icon.setContextMenu(tray_menu)
 
     def tray_icon_clicked(self, reason):
         if reason == QSystemTrayIcon.Trigger:
@@ -576,9 +669,25 @@ class ShareTable(QWidget):
     def quit_application(self):
         self.tray_icon.hide()
         QApplication.quit()
-
+        
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    
+    # Create a QSharedMemory object
+    shared_memory = QSharedMemory("my_app_key")
+
+    # Try to create 1 byte of shared memory.
+    # If this fails, it means that an instance of the application is already running.
+    if not shared_memory.create(1):
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Warning)
+        msg_box.setText("Application is already running. Check in the tray ?")
+        msg_box.setWindowTitle("Warning")
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        msg_box.exec_()
+        sys.exit(1)
+
     ex = SMBClient()
     ex.show()
+    
     sys.exit(app.exec_())
