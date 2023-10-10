@@ -41,6 +41,10 @@ Follow the on-screen instructions to mount or unmount SMB shares.
 ![Image](https://imgur.com/pxqPoII.png)
 
 
+## Todo
+* Add badges next to current letter in the shares table
+* Add server name on top of the shares table        
+
 ## Contributing
 Pull Requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
