@@ -621,12 +621,31 @@ class ShareTable(QWidget):
             self.table.setCellWidget(row, 4, unmount_button)
 
     def mount_share(self, row):
-
         share_name = self.table.item(row, 0).text()
         drive_letter = self.table.cellWidget(row, 2).currentText().replace(":", "")
         network_path = f"\\\\{server}\\{share_name}"
 
         try:
+            # Vérifie si la share est déjà montée au niveau du système
+            drives = win32api.GetLogicalDriveStrings().split('\x00')[:-1]
+            for drive in drives:
+                try:
+                    remote_name = win32wnet.WNetGetConnection(drive[:-1])
+                    if remote_name.lower() == network_path.lower():
+                        reply = QMessageBox.question(self, 'Warning', f"{network_path} is already mounted on {drive[:-1]}:\nDo you want to change the drive letter?", QMessageBox.Yes | QMessageBox.No)
+                        if reply == QMessageBox.No:
+                            return
+                        else:
+                            try:
+                                win32wnet.WNetCancelConnection2(f"{drive[:-1]}", 0, 0)
+                            except win32wnet.error as e:
+                                error_code, _, error_message = e.args
+                                print(f"Failed to unmount drive: ({error_code}, 'WNetCancelConnection2', '{error_message}')")
+                                QMessageBox.warning(self, 'Error', f"Failed to unmount drive: ({error_code}, 'WNetCancelConnection2', '{error_message}')")
+                                return
+                except Exception as e:
+                    pass
+
             net_resource = win32wnet.NETRESOURCE()
             net_resource.lpRemoteName = network_path
             net_resource.lpLocalName = f"{drive_letter}:"
