@@ -28,7 +28,7 @@ Follow the on-screen instructions to mount or unmount SMB shares.
 
 ## Screenshots
 
-### login window 
+### Login window 
 
 ![Image](https://i.imgur.com/ZDZq8ap.png)
 
